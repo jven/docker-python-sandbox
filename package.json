@@ -1,7 +1,7 @@
 {
-  "name": "docker-python-sandbox",
-  "version": "0.0.7",
-  "description": "A docker-based sandbox to execute untrusted python code",
+  "name": "docker-python-sandbox-mac",
+  "version": "0.0.1",
+  "description": "A fork of christophetd/docker-python-sandbox that works on Mac.",
   "main": "./lib/Sandbox",
   "scripts": {
     "test": "./scripts/run_tests.sh unit integration",
@@ -14,14 +14,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/christophetd/docker-python-sandbox-v2.git"
+    "url": "git+https://github.com/jven/docker-python-sandbox.git"
   },
-  "author": "Christophe Tafani-Dereeper <christophe@tafani-dereeper.me>",
+  "author": "Christophe Tafani-Dereeper <christophe@tafani-dereeper.me>, Justin Venezuela <jven@jvenezue.la>",
   "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/christophetd/docker-python-sandbox-v2/issues"
-  },
-  "homepage": "https://github.com/christophetd/docker-python-sandbox-v2#readme",
+  "bugs": {},
+  "homepage": "https://github.com/jven/docker-python-sandbox",
   "dependencies": {
     "async": "^2.0.0-rc.3",
     "babel-core": "^6.26.0",
