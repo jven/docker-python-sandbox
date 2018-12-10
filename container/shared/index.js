@@ -11,50 +11,130 @@ var port = process.env.PORT || 3000;
 app.use(bodyParser.json());
 
 app.post('/', function (req, res) {
-    
-    res.setHeader('Content-Type', 'application/json');
-    
-  	if (!req.body.code || !req.body.timeoutMs) {
-        res.status(400);
-        res.end(JSON.stringify({error: "no code or timeout specified"}));
-  	}
-  	else {
-  	    res.status(200);
-    
-  		// Write code to file
-  		fs.writeFileSync('./code.py', req.body.code);
-  		
-		var executor = (req.body.v3 === true) ? "python3" : "python"
-  		var job = child_process.spawn(executor, ["-u", "./code.py"], { cwd: __dirname })
-  		var output = {stdout: '', stderr: '', combined: ''};
-  		
-  		job.stdout.on('data', function (data) {
-  		    output.stdout += data;
-  		    output.combined += data;
-  		})
-  		
-  		job.stderr.on('data', function (data) {
-  		    output.stderr += data;
-  		    output.combined += data;
-  		})
-  	
-    	// Timeout logic
-  		var timeoutCheck = setTimeout(function () {
-  		    console.error("Process timed out. Killing")
-  		    job.kill('SIGKILL');
-  		    var result = _.extend(output, { timedOut: true, isError: true, killedByContainer: true });
-  		    res.end(JSON.stringify(result));
-  		}, req.body.timeoutMs)
-  		
-  		job.on('close', function (exitCode) {
-  		   var result = _.extend(output, { isError: exitCode != 0 })
-  		   res.end(JSON.stringify(result));
-  		   clearTimeout(timeoutCheck);
-  		});
-  	
-  	}
+  res.setHeader('Content-Type', 'application/json');
+	if (!req.body.code
+      || !req.body.lang
+      || !req.body.timeoutMs
+      || !req.body.testCases) {
+    res.status(400);
+    res.end(JSON.stringify({
+      results: [],
+      error: 'Must pass code, lang, timeoutMs, and testCases.'
+    }));
+    return;
+	}
+
+  if (req.body.lang == 'python') {
+    const results = [];
+    testCaseRecurse(
+        results,
+        0 /* testCaseIndex */,
+        req.body.testCases,
+        pythonTestCase,
+        req.body.code,
+        req.body.timeoutMs).then(() => {
+          res.end(JSON.stringify({
+            results: results,
+            error: null
+          }));
+        });
+    return;
+  }
+
+  res.end(JSON.stringify({
+    results: [],
+    error: 'Unknown language: ' + req.body.lang
+  }));
 });
 
+function testCaseRecurse(
+    results, testCaseIndex, testCases, testCaseFn, code, timeoutMs) {
+  if (testCaseIndex >= testCases.length) {
+    return Promise.resolve();
+  }
+
+  return testCaseFn(testCaseIndex, testCases[testCaseIndex], code, timeoutMs)
+      .then(result => {
+        results.push(result);
+        if (!result.passed) {
+          return Promise.resolve();
+        }
+        return testCaseRecurse(
+            results, testCaseIndex + 1, testCases, testCaseFn, code, timeoutMs);
+      });
+}
+
+function pythonTestCase(testCaseIndex, testCase, code, timeoutMs) {
+  return new Promise(function(resolve, reject) {
+    const testCode = fs.readFileSync('./test.py');
+    const codeFilename = './code' + testCaseIndex + '.py';
+    fs.appendFileSync(codeFilename, code + '\n' + testCode);
+
+    var stdout = '';
+    var stderr = '';
+    var params = ['-u', codeFilename];
+    for (var i = 0; i < testCase.params.length; i++) {
+      params.push(testCase.params[i].value);
+      params.push(testCase.params[i].type);
+    }
+    var job = child_process.spawn('python', params, {cwd: __dirname})
+    
+    job.stdout.on('data', function (data) {
+      stdout += data;
+    })
+    job.stderr.on('data', function (data) {
+      stderr += data;
+    })
+
+    var timeoutCheck = setTimeout(function() {
+      job.kill('SIGKILL');
+      resolve({
+        testCase: testCase,
+        passed: false,
+        error: 'Time limit exceeded: ' + timeoutMs + ' ms'
+      });
+    }, timeoutMs)
+    
+    job.on('close', function() {
+      if (stderr && stderr.length) {
+        resolve({
+          testCase: testCase,
+          passed: false,
+          error: stderr
+        });
+        return;
+      }
+
+      var tokens = stdout.split(' ');
+      if (tokens[0] != testCase.expected.type) {
+        resolve({
+          testCase: testCase,
+          passed: false,
+          error: 'Wrong answer type. Expected ' + testCase.expected.type
+              + ', got ' + tokens[0]
+        });
+        return;
+      }
+      const ans = tokens.slice(1).join(' ');
+      if (ans != testCase.expected.value) {
+        resolve({
+          testCase: testCase,
+          passed: false,
+          error: 'Wrong answer. Expected ' + testCase.expected.value + ', got '
+              + stdout
+        });
+        return;
+      }
+      clearTimeout(timeoutCheck);
+      resolve({
+        testCase: testCase,
+        passed: true,
+        error: null
+      });
+    });
+  });
+}
+
 app.listen(port, function () {
-	console.log('Container service running on port '+port);
+	console.log('Container service running on port ' + port);
 });
